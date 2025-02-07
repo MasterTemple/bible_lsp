@@ -5,6 +5,7 @@ use tower_lsp::lsp_types::CompletionItem;
 
 use crate::{
     bible_api::BibleAPI,
+    bible_lsp::{append_log, append_to_file},
     book_reference_segment::{
         BookReferenceSegment, BookReferenceSegments, ChapterRange, ChapterVerse,
     },
@@ -106,6 +107,8 @@ impl AutocompleteState {
                     // if chapter is invalid (out of bounds), I will return empty list
                     return vec![];
                 };
+
+                // append_log(format!("verse_count={}\n\n", &verse_count));
                 (1..=verse_count)
                     .map(|verse| {
                         BibleCompletion::Verse(VerseCompletion {
@@ -113,7 +116,7 @@ impl AutocompleteState {
                             chapter,
                             verse,
                             segments: BookReferenceSegments::new(),
-                            operator: AutocompletionEndingOperator::Chapter,
+                            operator: AutocompletionEndingOperator::Break,
                         })
                     })
                     .collect()
@@ -279,10 +282,16 @@ impl BibleCompletion {
                 // }));
                 match operator {
                     AutocompletionEndingOperator::None => {
+                        // if segments.len() == 0 {
+                        //     segments.push(BookReferenceSegment::ChapterVerse(ChapterVerse {
+                        //         chapter,
+                        //         verse,
+                        //     }));
+                        // }
                         // removing last element because it is incomplete
                         // let _ = segments.pop();
                     }
-                    AutocompletionEndingOperator::Chapter => (),
+                    AutocompletionEndingOperator::Chapter => {}
                     AutocompletionEndingOperator::Break => {
                         segments.push(BookReferenceSegment::ChapterVerse(ChapterVerse {
                             chapter,
@@ -312,6 +321,7 @@ impl BibleCompletion {
             }
         }
     }
+
     pub fn lsp_preview(&self, api: &BibleAPI) -> String {
         // return format!("```rust\n{self:?}\n```");
         match self.clone() {
@@ -341,10 +351,14 @@ impl BibleCompletion {
             }) => {
                 // ! this should be based on the type of the segment if it is , or -
                 match operator {
-                    AutocompletionEndingOperator::None => {
-                        // removing last element because it is incomplete
-                        // let _ = segments.pop();
-                    }
+                    // AutocompletionEndingOperator::None => {
+                    //     // segments.push(BookReferenceSegment::ChapterVerse(ChapterVerse {
+                    //     //     chapter,
+                    //     //     verse,
+                    //     // }));
+                    //     // removing last element because it is incomplete
+                    //     // let _ = segments.pop();
+                    // }
                     AutocompletionEndingOperator::Chapter => (),
                     AutocompletionEndingOperator::Break => {
                         segments.push(BookReferenceSegment::ChapterVerse(ChapterVerse {
@@ -352,7 +366,7 @@ impl BibleCompletion {
                             verse,
                         }));
                     }
-                    AutocompletionEndingOperator::Through => {
+                    AutocompletionEndingOperator::None | AutocompletionEndingOperator::Through => {
                         let start_verse = segments
                             .last()
                             .expect("I'm pretty sure it always has a segment")
@@ -394,6 +408,25 @@ impl BibleCompletion {
                     .collect::<Vec<String>>()
                     .join("\n\n");
                 format!("### {label}\n\n{content}")
+            }
+        }
+    }
+    pub fn lsp_sort(&self) -> String {
+        match self {
+            // book's dont compete with chapters or verses
+            BibleCompletion::BookName(book_name_completion) => {
+                // label.to_string()
+                format!("{:03}", book_name_completion.book_id)
+            }
+            // prefixing with z so that verses show before chapters
+            BibleCompletion::Chapter(chapter_completion) => {
+                format!("z{:03}", chapter_completion.chapter)
+            }
+            BibleCompletion::Verse(verse_completion) => {
+                format!(
+                    "{:03}:{:03}",
+                    verse_completion.chapter, verse_completion.verse
+                )
             }
         }
     }

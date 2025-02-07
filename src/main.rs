@@ -10,7 +10,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use bible_api::BibleAPI;
-use bible_lsp::BibleLSP;
+use bible_lsp::{append_log, BibleLSP};
 use tower_lsp::lsp_types::{Position, PositionEncodingKind, Range};
 
 mod api_wrappers;
@@ -141,7 +141,10 @@ impl LanguageServer for Backend {
             .expect("LSP gave bad index")
             .to_string();
 
-        let text_before_cursor = &line[..(pos.character as usize)];
+        // append_log(format!("{:?}\n{:#?}", &line, pos));
+        // neovim panics here
+        // let text_before_cursor = &line[..(pos.character as usize)];
+        let text_before_cursor = &line[..(std::cmp::min(pos.character as usize, line.len()))];
         let suggestions = self.lsp.suggest_auto_completion(text_before_cursor);
         // let mut completion_items: Vec<CompletionItem> = vec![];
         // completion_items.push(CompletionItem {
@@ -157,6 +160,8 @@ impl LanguageServer for Backend {
             .into_iter()
             .map(|item| {
                 let label = item.label(&self.lsp.api);
+                // append_log(format!("{:#?}", label));
+                // append_log(format!("{:#?}\n", item));
                 let text_edit = match book_match {
                     Some(m) => {
                         let start = m.start() as u32;
@@ -182,6 +187,7 @@ impl LanguageServer for Backend {
                 //
                 // };
                 let doc_content = item.lsp_preview(&self.lsp.api);
+                let sort_text = item.lsp_sort();
                 CompletionItem {
                     label,
                     documentation: Some(Documentation::MarkupContent(MarkupContent {
@@ -190,6 +196,7 @@ impl LanguageServer for Backend {
                     })),
                     text_edit,
                     kind: Some(CompletionItemKind::REFERENCE),
+                    sort_text: Some(sort_text),
                     ..Default::default()
                 }
             })

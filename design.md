@@ -3,6 +3,7 @@ Features I want to support:
 - Hover (customizable context)
 - Auto-completion
 - Go to definition
+- Code Action: Insert verse content below in a specified format
 
 With all of these, I want a custom formatter
 

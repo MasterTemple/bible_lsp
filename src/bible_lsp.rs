@@ -407,16 +407,19 @@ impl BibleLSP {
         //     .open("~/bible_lsp.log")
         //     .unwrap();
         // write!(file, format!("{:#?}", &state));
-        let _ = append_to_file(
-            "/home/dgmastertemple/bible_lsp.log",
-            format!("{}\n{:#?}\n\n", line, &state).as_str(),
-        );
+        // append_log(format!("{}\n{:#?}\n\n", line, &state));
         // format!("{:#?}", &state);
-        state.give_suggestions(&self.api)
+        let result = state.give_suggestions(&self.api);
+        append_log(format!("result={:#?}\n\n", &result));
+        result
     }
 }
 
-fn append_to_file(filename: &str, content: &str) -> Result<(), io::Error> {
+pub fn append_log(content: impl AsRef<str>) {
+    _ = append_to_file("/home/dgmastertemple/bible_lsp.log", content.as_ref());
+}
+
+pub fn append_to_file(filename: &str, content: &str) -> Result<(), io::Error> {
     // Open the file in append mode. Create it if it doesn't exist.
     let mut file = OpenOptions::new()
         .append(true)
