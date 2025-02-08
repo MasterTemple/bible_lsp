@@ -77,6 +77,21 @@ impl BookReference {
         format!("### {reference}\n\n{content}")
     }
 
+    pub fn format_insert(&self, api: &BibleAPI) -> String {
+        let reference = self.full_ref_label(api);
+        let content = self.format_content(api);
+        format!("\n{content}")
+    }
+
+    pub fn format_replace(&self, api: &BibleAPI) -> String {
+        let reference = self.full_ref_label(api);
+        let content = self
+            .format_content(api)
+            .replace("\n\n", "\n")
+            .replace("\n", " ");
+        format!("> {content} - {reference}")
+    }
+
     pub fn format_diagnostic(&self, api: &BibleAPI) -> Option<String> {
         let first_segment = self.segments.first()?;
         // .expect("This would not have matched as a book reference if there were not segments");

@@ -407,10 +407,10 @@ impl BibleLSP {
         //     .open("~/bible_lsp.log")
         //     .unwrap();
         // write!(file, format!("{:#?}", &state));
-        // append_log(format!("{}\n{:#?}\n\n", line, &state));
+        append_log(format!("{}\n{:#?}\n\n", line, &state));
         // format!("{:#?}", &state);
         let result = state.give_suggestions(&self.api);
-        append_log(format!("result={:#?}\n\n", &result));
+        // append_log(format!("result={:#?}\n\n", &result));
         result
     }
 }

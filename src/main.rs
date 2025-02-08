@@ -1,4 +1,7 @@
+use book_reference::BookReference;
+use book_reference_segment::{BookRange, BookReferenceSegment, BookReferenceSegments};
 use once_cell::sync::Lazy;
+use serde_json::Value;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::env;
@@ -22,6 +25,26 @@ mod bible_lsp;
 mod book_reference;
 mod book_reference_segment;
 mod re;
+
+/// Writes contents to a persistent temporary file and returns the file URI
+pub fn create_temp_file_in_memory(book_name: &str, contents: &str) -> std::io::Result<Url> {
+    // Create a temporary directory using the OS's temp dir
+    let temp_dir = env::temp_dir();
+
+    // Create a unique file name (e.g., definition_temp.txt)
+    let temp_file_path = temp_dir.join(format!("{book_name}.md"));
+
+    // Create and write to the file
+    let mut temp_file = File::create(&temp_file_path)?;
+    write!(temp_file, "{}", contents)?;
+
+    // Convert the file path to a URI (file://)
+    let uri = Url::from_file_path(&temp_file_path).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::Other, "Failed to convert path to URI")
+    })?;
+
+    Ok(uri)
+}
 
 #[derive(Debug)]
 struct Backend {
@@ -60,6 +83,13 @@ impl LanguageServer for Backend {
                         ..Default::default()
                     },
                 )),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+                // inline_value_provider: Some(OneOf::Left(true)),
+                // inlay_hint_provider: Some(OneOf::Left(true)),
+                // code_lens_provider: Some(CodeLensOptions {
+                //     resolve_provider: Some(true),
+                // }),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -243,11 +273,316 @@ impl LanguageServer for Backend {
         ))
     }
 
+    // see /home/dgmastertemple/Development/rust/scripture_lsp/src/main.rs line 233
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        Ok(None)
+        let doc = params.text_document_position_params.text_document;
+        let text = documents
+            .read()
+            .unwrap()
+            .get(&doc.uri)
+            .cloned()
+            .expect("It should be in the map");
+        let pos = params.text_document_position_params.position;
+        let Some(refs) = self.lsp.find_book_references(&text) else {
+            return Ok(None);
+        };
+
+        let refs = refs
+            .into_iter()
+            .filter(|book_ref| book_ref.range.start.line == pos.line)
+            .collect::<Vec<_>>();
+        let cursor = params.text_document_position_params.position.character;
+        // let book_ref = if refs.first().is_some_and(|found| found.range) {
+        //
+        // } else {};
+        let Some(book_ref) = refs
+            .into_iter()
+            .find(|r| r.range.start.character <= cursor && cursor <= r.range.end.character)
+        else {
+            return Ok(None);
+        };
+        let book_id = book_ref.book_id;
+        let end_chapter = self
+            .lsp
+            .api
+            .get_book_chapter_count(book_id)
+            .expect("This is a valid book id");
+        let end_verse = self
+            .lsp
+            .api
+            .get_chapter_verse_count(book_id, end_chapter)
+            .expect("This is a valid book and chapter");
+        let whole_book = BookReference {
+            book_id,
+            range: book_ref.range,
+            segments: BookReferenceSegments(vec![BookReferenceSegment::BookRange(BookRange {
+                start_chapter: 1,
+                end_chapter,
+                start_verse: 1,
+                end_verse,
+            })]),
+        };
+
+        let book_name = self.lsp.api.get_book_name(book_id).expect("It is valid");
+        let content = whole_book.format_content(&self.lsp.api);
+        let file_contents = format!("### {}\n\n{}", book_name, content);
+        let Some((chapter, verse)) = book_ref
+            .segments
+            .first()
+            .map(|seg| (seg.get_starting_chapter(), seg.get_starting_verse()))
+        else {
+            return Ok(None);
+        };
+        // this would have to change when i change templating
+        // let the_match = format!("[{}:{}]", chapter, verse).as_str();
+        let Some(the_match) = file_contents.find(format!("[{}:{}]", chapter, verse).as_str())
+        else {
+            return Ok(None);
+        };
+        let line_number = file_contents[..=the_match]
+            .chars()
+            .filter(|c| *c == '\n')
+            .count();
+
+        match create_temp_file_in_memory(&book_name, file_contents.as_str()) {
+            Ok(uri) => Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                uri,
+                range: Range {
+                    start: Position {
+                        line: line_number as u32,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: line_number as u32,
+                        character: 0,
+                    },
+                },
+            }))),
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        // params.text_document.uri
+        let doc = params.text_document;
+        let uri = doc.uri.clone();
+        let text = documents
+            .read()
+            .unwrap()
+            .get(&doc.uri)
+            .cloned()
+            .expect("It should be in the map");
+        let pos = params.range.start;
+        let Some(refs) = self.lsp.find_book_references(&text) else {
+            return Ok(None);
+        };
+
+        let refs = refs
+            .into_iter()
+            .filter(|book_ref| book_ref.range.start.line == pos.line)
+            .collect::<Vec<_>>();
+        // append_log(format!("{:#?}", refs));
+        let mut res = CodeActionResponse::new();
+        for each in refs {
+            res.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Insert {}", each.full_ref_label(&self.lsp.api)),
+                kind: None,
+                diagnostics: None,
+                edit: Some(WorkspaceEdit {
+                    changes: None,
+                    document_changes: Some(DocumentChanges::Edits(vec![
+                        // TextDocumentEdit::new()
+                        TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: uri.clone(),
+                                version: None,
+                            },
+                            // prefix inserted content with \n so that way it works when
+                            // i try inserting on the next line when i am on the last line
+                            edits: vec![OneOf::Left(TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: pos.line,
+                                        character: u32::MAX,
+                                    },
+                                    end: Position {
+                                        line: pos.line,
+                                        character: u32::MAX,
+                                    },
+                                },
+                                new_text: each.format_insert(&self.lsp.api),
+                            })],
+                        },
+                    ])),
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: None,
+                disabled: None,
+                data: None,
+                ..Default::default()
+            }));
+
+            res.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Replace {}", each.full_ref_label(&self.lsp.api)),
+                kind: None,
+                diagnostics: None,
+                edit: Some(WorkspaceEdit {
+                    changes: None,
+                    document_changes: Some(DocumentChanges::Edits(vec![
+                        // TextDocumentEdit::new()
+                        TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: uri.clone(),
+                                version: None,
+                            },
+                            // this doesn't work if i am on last line
+                            edits: vec![OneOf::Left(TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: pos.line,
+                                        character: 0,
+                                    },
+                                    end: Position {
+                                        line: pos.line,
+                                        character: u32::MAX,
+                                    },
+                                },
+                                new_text: each.format_replace(&self.lsp.api),
+                            })],
+                        },
+                    ])),
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: None,
+                disabled: None,
+                data: None,
+                ..Default::default()
+            }));
+        }
+
+        Ok(Some(res))
+        // Ok(None)
+    }
+
+    async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
+        Ok(Some(vec![CodeLens {
+            range: Range {
+                start: Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: Position {
+                    line: 1,
+                    character: 0,
+                },
+            },
+            command: Some(Command {
+                title: "Code Lens Title".to_string(),
+                command: "command".to_string(),
+                arguments: Some(vec![Value::String(String::from("arg 1"))]),
+            }),
+            data: None,
+        }]))
+    }
+
+    async fn inline_value(&self, params: InlineValueParams) -> Result<Option<Vec<InlineValue>>> {
+        Ok(Some(vec![InlineValue::Text(InlineValueText {
+            range: Range {
+                start: Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: Position {
+                    line: 1,
+                    character: u32::MAX,
+                },
+            },
+            text: "Inline Value".to_string(),
+        })]))
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        Ok(Some(vec![
+            InlayHint {
+                position: Position {
+                    line: 1,
+                    character: u32::MAX,
+                },
+                // label: InlayHintLabel::String(String::from("Ephesians 1:1")),
+                label: InlayHintLabel::String(String::from("Paul, an apostle of Christ Jesus by the will of God, To the saints who are in Ephesus, and are faithful in Christ Jesus:")),
+                kind: None,
+                text_edits: None,
+                tooltip: Some(InlayHintTooltip::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: String::from("### Ephesians 1:1
+
+[1:1] Paul, an apostle of Christ Jesus by the will of God, To the saints who are in Ephesus, and are faithful in Christ Jesus:
+"),
+                })),
+                padding_left: Some(true),
+                padding_right: Some(true),
+                data: None,
+            },
+//             InlayHint {
+//                 position: Position {
+//                     line: 1,
+//                     character: u32::MAX,
+//                 },
+//                 // label: InlayHintLabel::String(String::from("John 1:1")),
+//                 label: InlayHintLabel::String(String::from("In the beginning was the Word, and the Word was with God, and the Word was God.")),
+//                 kind: None,
+//                 text_edits: None,
+//                 tooltip: Some(InlayHintTooltip::MarkupContent(MarkupContent {
+//                     kind: MarkupKind::Markdown,
+//                     value: String::from(
+//                         "### John 1:1
+//
+// [1:1] In the beginning was the Word, and the Word was with God, and the Word was God.",
+//                     ),
+//                 })),
+//                 padding_left: Some(true),
+//                 padding_right: Some(true),
+//                 data: None,
+//             },
+        ]))
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let doc = params.text_document;
+        let text = documents
+            .read()
+            .unwrap()
+            .get(&doc.uri)
+            .cloned()
+            .expect("It should be in the map");
+
+        // let mut symbols: Vec<Diagnostic> = Vec::new();
+        let Some(refs) = self.lsp.find_book_references(&text) else {
+            return Ok(None);
+        };
+        let symbols = refs
+            .into_iter()
+            .map(|book_ref| SymbolInformation {
+                name: book_ref.full_ref_label(&self.lsp.api),
+                kind: SymbolKind::KEY,
+                location: Location {
+                    uri: doc.uri.clone(),
+                    range: book_ref.range,
+                },
+                tags: None,
+                deprecated: None,
+                container_name: None,
+            })
+            .collect::<Vec<_>>();
+        Ok(Some(DocumentSymbolResponse::Flat(symbols)))
     }
 
     async fn shutdown(&self) -> Result<()> {
