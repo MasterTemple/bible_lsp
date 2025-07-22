@@ -16,15 +16,15 @@ use bible_api::BibleAPI;
 use bible_lsp::{append_log, BibleLSP};
 use tower_lsp::lsp_types::{Position, PositionEncodingKind, Range};
 
-mod api_wrappers;
-mod autocompletion;
-mod bible_api;
-mod bible_formatter;
-mod bible_json;
-mod bible_lsp;
-mod book_reference;
-mod book_reference_segment;
-mod re;
+pub mod api_wrappers;
+pub mod autocompletion;
+pub mod bible_api;
+pub mod bible_formatter;
+pub mod bible_json;
+pub mod bible_lsp;
+pub mod book_reference;
+pub mod book_reference_segment;
+pub mod re;
 
 /// Writes contents to a persistent temporary file and returns the file URI
 pub fn create_temp_file_in_memory(book_name: &str, contents: &str) -> std::io::Result<Url> {
@@ -256,7 +256,18 @@ impl LanguageServer for Backend {
                 diagnostics.push(Diagnostic {
                     range: book_ref.range,
                     severity: Some(DiagnosticSeverity::INFORMATION),
+                    // severity: Some(DiagnosticSeverity::HINT),
                     message,
+                    code: Some(NumberOrString::String(
+                        book_ref.full_ref_label(&self.lsp.api),
+                    )),
+                    // code_description: Some(CodeDescription { href: () }),
+                    // source: todo!(),
+                    // related_information: Some(vec![
+                    //     DiagnosticRelatedInformation
+                    // ]),
+                    // tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+                    // data: todo!(),
                     ..Default::default()
                 });
             }
@@ -387,6 +398,45 @@ impl LanguageServer for Backend {
         // append_log(format!("{:#?}", refs));
         let mut res = CodeActionResponse::new();
         for each in refs {
+            res.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Insert Callout {}", each.full_ref_label(&self.lsp.api)),
+                kind: None,
+                diagnostics: None,
+                edit: Some(WorkspaceEdit {
+                    changes: None,
+                    document_changes: Some(DocumentChanges::Edits(vec![
+                        // TextDocumentEdit::new()
+                        TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: uri.clone(),
+                                version: None,
+                            },
+                            // prefix inserted content with \n so that way it works when
+                            // i try inserting on the next line when i am on the last line
+                            edits: vec![OneOf::Left(TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: pos.line,
+                                        character: 0,
+                                    },
+                                    end: Position {
+                                        line: pos.line,
+                                        character: u32::MAX,
+                                    },
+                                },
+                                new_text: each.format_callout(&self.lsp.api),
+                            })],
+                        },
+                    ])),
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: None,
+                disabled: None,
+                data: None,
+                ..Default::default()
+            }));
+
             res.push(CodeActionOrCommand::CodeAction(CodeAction {
                 title: format!("Insert {}", each.full_ref_label(&self.lsp.api)),
                 kind: None,
@@ -599,3 +649,25 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend { client, lsp });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
+
+// fn main() {
+//     let json_path = "/home/dgmastertemple/Development/rust/bible_api/esv.json";
+//     let lsp = BibleLSP::new(json_path);
+//     let contents = std::fs::read_to_string("/home/dgmastertemple/christian_commons.txt").unwrap();
+//     let references = lsp.find_book_references(&contents).unwrap();
+//     // for BookReference {
+//     //     range,
+//     //     book_id,
+//     //     segments,
+//     // } in references
+//     // {
+//     //     println!(
+//     //         "{} at [{}:{}-{}:{}]",
+//     //         segments.label(),
+//     //         range.start.line,
+//     //         range.start.character,
+//     //         range.end.line,
+//     //         range.end.character,
+//     //     );
+//     // }
+// }

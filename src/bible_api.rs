@@ -161,6 +161,8 @@ impl BibleAPI {
         )
     }
 
+    // this is actually wrong, because you must go to end of the chapter not end verse if there
+    // is another chapter
     pub fn get_bible_range_contents(
         &self,
         book_id: usize,

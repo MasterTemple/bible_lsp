@@ -69,6 +69,14 @@ fn calculate_position(newline_indexes: &Vec<usize>, start_index: usize, end_inde
     let mut mid = top / bottom;
 
     while top != bottom {
+        // dbg!(
+        //     top,
+        //     mid,
+        //     bottom,
+        //     newline_indexes.get(mid - 1),
+        //     newline_indexes.get(mid),
+        //     newline_indexes.get(mid + 1)
+        // );
         // okay, maybe i want to just remove if the first one is it and then just always
         // check left
         // the below case may handle the end one, but i dont want to think about it right now so i
@@ -78,6 +86,10 @@ fn calculate_position(newline_indexes: &Vec<usize>, start_index: usize, end_inde
         } else if start_index < newline_indexes[mid] {
             top = mid;
         } else {
+            if bottom == mid {
+                mid += 1;
+                break;
+            }
             bottom = mid;
         }
         mid = bottom + ((top - bottom) / 2);
@@ -261,6 +273,14 @@ impl BibleLSP {
             .filter(|(_, ch)| *ch == '\n')
             .map(|(idx, _)| idx)
             .collect::<Vec<usize>>();
+        // let char_offset: usize = input.chars().filter(|ch| !ch.is_ascii()).count();
+        // let char_offset = char_offset * 2;
+        let char_offsets: Vec<_> = input
+            .char_indices()
+            .filter(|(idx, ch)| !ch.is_ascii())
+            .map(|(idx, ch)| idx)
+            .collect();
+
         /*
         Break the input into segments where each segment starts with a book of the Bible
         Also record the len of each book, so that I can efficiently split the segment into the book name and remaining text
@@ -277,7 +297,10 @@ impl BibleLSP {
         // abbreviation to right before the start of the next)
         let mut segment_matches = vec![];
         while let Some(cap) = iter.next() {
-            start_indexes.push(cap.start());
+            let start = cap.start();
+            let char_offset = 2 * char_offsets.iter().filter(|o| o < &&start).count();
+            // let char_offset = char_offset + 2 - (cap.end() - cap.start());
+            start_indexes.push(cap.start() - char_offset);
             book_lens.push(cap.end() - cap.start());
             // store the previous start up until the start of this book
             // wait until the next iteration to store the segment of the current iteration
@@ -301,6 +324,7 @@ impl BibleLSP {
             .zip(book_lens)
             .zip(start_indexes)
         {
+            // dbg!(start_index, book_len, seg);
             // find the reference segments (`1:1-2:2,3:4`) in the text segment if it is right after
             // the book name/abbreviation
             if let Some(segment_match) =
@@ -315,6 +339,16 @@ impl BibleLSP {
                 let end_index = start_index + book_name.len() + segment_chars.len();
                 let range = calculate_position(&newline_indexes, start_index, end_index);
                 let book_reference = BookReference::new(book_id, range, segment_chars);
+
+                // println!(
+                //     "{} {} at [{}:{}-{}:{}]",
+                //     book_name,
+                //     book_reference.segments.label(),
+                //     book_reference.range.start.line,
+                //     book_reference.range.start.character,
+                //     book_reference.range.end.line,
+                //     book_reference.range.end.character,
+                // );
                 book_references.push(book_reference);
             }
         }
@@ -430,4 +464,13 @@ pub fn append_to_file(filename: &str, content: &str) -> Result<(), io::Error> {
     writeln!(file, "{}", content)?;
 
     Ok(())
+}
+
+#[test]
+fn alexis() {
+    let json_path = "/home/dgmastertemple/Development/rust/bible_api/esv.json";
+    let lsp = BibleLSP::new(json_path);
+    let contents = fs::read_to_string("/home/dgmastertemple/christian_commons.txt").unwrap();
+    let references = lsp.find_book_references(&contents);
+    dbg!(references);
 }

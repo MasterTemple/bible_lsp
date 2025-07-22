@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{Position, Range};
 use crate::{autocompletion::AutocompleteState, bible_api::BibleAPI, re};
 
 /// - This is a single chapter/verse reference
-/// - Ex: `John 1:2`
+/// - Ex: `1:2` in `John 1:2`
 #[derive(Clone, Debug)]
 pub struct ChapterVerse {
     pub chapter: usize,
@@ -14,7 +14,7 @@ pub struct ChapterVerse {
 }
 
 /// - This is a range of verse references within a single chapter
-/// - Ex: `John 1:2-3`
+/// - Ex: `1:2-3` `John 1:2-3`
 #[derive(Clone, Debug)]
 pub struct ChapterRange {
     pub chapter: usize,
@@ -23,7 +23,7 @@ pub struct ChapterRange {
 }
 
 /// - This is a range of verse references across a multiple chapters
-/// - Ex: `John 1:2-3:4`
+/// - Ex: `1:2-3:4` in `John 1:2-3:4`
 #[derive(Clone, Debug)]
 pub struct BookRange {
     pub start_chapter: usize,
@@ -51,10 +51,10 @@ pub struct BookRange {
 #[derive(Clone, Debug)]
 pub enum BookReferenceSegment {
     /// - This is a single chapter/verse reference
-    /// - Ex: `John 1:2`
+    /// - Ex: `1:2` in `John 1:2`
     ChapterVerse(ChapterVerse),
     /// - This is a range of verse references within a single chapter
-    /// - Ex: `John 1:2-3`
+    /// - Ex: `1:2-3` `John 1:2-3`
     ChapterRange(ChapterRange),
     /// - This is a range of verse references across a multiple chapters
     /// - Ex: `John 1:2-3:4`

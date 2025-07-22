@@ -77,6 +77,36 @@ impl BookReference {
         format!("### {reference}\n\n{content}")
     }
 
+    pub fn format_callout(&self, api: &BibleAPI) -> String {
+        let reference = self.full_ref_label(api);
+        let content = self.format_callout_content(api);
+        format!("> [!bible] {reference} ESV\n> {content}")
+    }
+
+    pub fn format_callout_content(&self, api: &BibleAPI) -> String {
+        self.segments
+            .iter()
+            .map(|seg| {
+                let mut contents = vec![];
+                for chapter in seg.get_starting_chapter()..=seg.get_ending_chapter() {
+                    for verse in seg.get_starting_verse()..=seg.get_ending_verse() {
+                        if let Some(content) = api.get_bible_contents(self.book_id, chapter, verse)
+                        {
+                            if verse == 1 && contents.len() > 0 {
+                                contents
+                                    .push(format!("<sup>{}:{}</sup>{}", chapter, verse, content));
+                            } else {
+                                contents.push(format!("<sup>{}</sup>{}", verse, content));
+                            }
+                        }
+                    }
+                }
+                contents.join("\n")
+            })
+            .collect::<Vec<String>>()
+            .join("\n\n>")
+    }
+
     pub fn format_insert(&self, api: &BibleAPI) -> String {
         let reference = self.full_ref_label(api);
         let content = self.format_content(api);

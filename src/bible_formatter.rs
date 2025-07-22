@@ -1,5 +1,36 @@
 use crate::book_reference_segment::BookReferenceSegment;
 
+struct PassageFormatter {
+    // can use book, chapter, verse, content
+    verse: String,
+
+    // the text that joins all verses together
+    join_verses: String,
+
+    // can use verses
+    segment: String,
+
+    // the text that joins all segments together
+    join_segment: String,
+
+    // can use book, label/reference, segments
+    text: String,
+
+    // insert, replace, all, ...
+    code_actions: Vec<String>,
+}
+
+fn literal_word() -> PassageFormatter {
+    PassageFormatter {
+        verse: "{content}".to_string(),
+        join_verses: " ".to_string(),
+        segment: "{verses}".to_string(),
+        join_segment: " ".to_string(),
+        text: "> {segments}\n— {reference}".to_string(),
+        code_actions: vec![],
+    }
+}
+
 struct BibleFormatter {
     book_format: String,
     chapter_format: String,
