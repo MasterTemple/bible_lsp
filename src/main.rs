@@ -644,7 +644,8 @@ impl LanguageServer for Backend {
 async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
-    let json_path = "/home/dgmastertemple/Development/rust/bible_api/esv.json";
+    // scp dgmastertemple@192.168.4.145:/home/dgmastertemple/Development/rust/bible_api/esv.json esv.json
+    let json_path = "/home/dgmastertemple/github/bible_lsp/esv.json";
     let lsp = BibleLSP::new(json_path);
     let (service, socket) = LspService::new(|client| Backend { client, lsp });
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -671,3 +672,14 @@ async fn main() {
 //     //     );
 //     // }
 // }
+//
+#[test]
+fn typst() {
+    let json_path = "/home/dgmastertemple/Documents/GitHub/bible_lsp/esv.json";
+    let lsp = BibleLSP::new(json_path);
+    let contents = std::fs::read_to_string("/home/dgmastertemple/tdp_verses.txt").unwrap();
+    let references = lsp.find_book_references(&contents).unwrap();
+    for r in references {
+        println!("{}\n\n", r.format_callout(&lsp.api));
+    }
+}

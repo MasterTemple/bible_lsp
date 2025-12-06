@@ -80,7 +80,7 @@ impl BookReference {
     pub fn format_callout(&self, api: &BibleAPI) -> String {
         let reference = self.full_ref_label(api);
         let content = self.format_callout_content(api);
-        format!("> [!bible] {reference} ESV\n> {content}")
+        format!("> [!bible] {reference} ESV\n{content}")
     }
 
     pub fn format_callout_content(&self, api: &BibleAPI) -> String {
@@ -94,9 +94,9 @@ impl BookReference {
                         {
                             if verse == 1 && contents.len() > 0 {
                                 contents
-                                    .push(format!("<sup>{}:{}</sup>{}", chapter, verse, content));
+                                    .push(format!("> <sup>{}:{}</sup>{}", chapter, verse, content));
                             } else {
-                                contents.push(format!("<sup>{}</sup>{}", verse, content));
+                                contents.push(format!("> <sup>{}</sup>{}", verse, content));
                             }
                         }
                     }
